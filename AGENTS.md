@@ -20,14 +20,14 @@ yt-dlp-api is a RESTful API service that provides a web interface to yt-dlp (a Y
 
 ```
 yt-dlp-api/
-├── main.py                 # Single-file FastAPI application (1,378 lines)
-├── tests/                  # Test suite (157 tests, 75% coverage)
+├── main.py                 # Single-file FastAPI application (1,967 lines)
+├── tests/                  # Test suite (166+ tests, 75% coverage)
 │   ├── conftest.py         # Shared pytest fixtures
 │   ├── test_utils.py       # Utility function tests
 │   ├── test_config.py      # Configuration class tests
 │   ├── test_state.py       # Database/state tests
 │   ├── test_retry.py       # Retry logic tests
-│   └── test_api.py         # API endpoint integration tests
+│   └── test_api.py         # API endpoint integration tests (8 test classes)
 ├── .github/workflows/      # CI/CD workflows
 │   ├── docker-image.yml    # Docker build & publish
 │   └── test.yml            # Test automation
@@ -47,6 +47,11 @@ yt-dlp-api/
 3. **YtDlpService** - Wrapper around yt-dlp for video/audio/subtitle operations
 4. **Retry Logic** - Exponential backoff with jitter for rate-limited requests
 5. **API Endpoints** - FastAPI routes for downloads, task queries, file retrieval
+6. **V2 Subtitle Models** - Policy-based subtitle selection with intelligent English mode:
+   - `EnglishMode`: Enum (best_one, all_english, explicit) - controls subtitle selection behavior
+   - `SubtitlePreference`: Enum (manual_then_auto, auto_only, manual_only) - manual vs automatic subtitles
+   - `SubtitleFormat`: Enum (srt, vtt, both) - output format selection
+   - `SubtitlesV2Request`: Main request model with optional language ranking and regex support
 
 ### Key Classes/Functions
 
@@ -54,6 +59,9 @@ yt-dlp-api/
 |-----------|-------|---------|
 | `State` | 515-674 | Database operations, task CRUD |
 | `YtDlpService` | 681-931 | yt-dlp wrapper methods |
+| `download_subtitles_v2` | 1516-1590 | Enhanced subtitle download with policy selection |
+| `_select_best_subtitle_language` | 1593-1626 | Rank-based language selection |
+| `_get_all_english_languages` | 1629-1640 | Get all English subtitle variants |
 | `retry_with_backoff` | 468-508 | Retry logic with exponential backoff |
 | `resolve_task_base_dir` | 210-232 | Path traversal prevention |
 | `resolve_cookie_file` | 239-279 | Cookie file validation |
@@ -62,7 +70,8 @@ yt-dlp-api/
 
 - `POST /download` - Video download
 - `POST /audio` - Audio-only download
-- `POST /subtitles` - Subtitles download
+- `POST /subtitles` - Subtitles download (original, requires explicit language codes)
+- `POST /v2/subtitles` - Enhanced subtitles download with policy-based English subtitle selection
 - `GET /task/{id}` - Task status
 - `GET /tasks` - List all tasks
 - `GET /info` - Video metadata
