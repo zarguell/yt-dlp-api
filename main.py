@@ -1110,7 +1110,8 @@ class YtDlpService:
                 return pattern
 
             # Try regex match
-            regex = re.compile(f"^{re.escape(pattern).replace(r'\*', '.*')}$")
+            escaped = re.escape(pattern).replace(r'\*', '.*')
+            regex = re.compile(f"^{escaped}$")
             manual_matches = [lang for lang in manual_langs if regex.match(lang)]
             auto_matches = [lang for lang in auto_langs if regex.match(lang)]
 
