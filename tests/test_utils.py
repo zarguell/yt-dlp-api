@@ -51,7 +51,8 @@ class TestEnvTruthy:
         """Test various truthy/falsey string values."""
         assert _env_truthy(value) == expected
 
-    def test_env_truthy_none_with_default(self) -> None:
+    @staticmethod
+    def test_env_truthy_none_with_default() -> None:
         """Test None value with custom default."""
         assert _env_truthy(None, default=True) is True
         assert _env_truthy(None, default=False) is False
@@ -138,7 +139,8 @@ class TestIsSafeSubdirName:
         """Test names that should be considered unsafe."""
         assert _is_safe_subdir_name(name) is False
 
-    def test_custom_max_length(self) -> None:
+    @staticmethod
+    def test_custom_max_length() -> None:
         """Test custom max_length parameter."""
         long_name = "a" * 50
         assert _is_safe_subdir_name(long_name, max_length=50) is True
@@ -148,7 +150,8 @@ class TestIsSafeSubdirName:
 class TestResolveTaskBaseDir:
     """Tests for resolve_task_base_dir function."""
 
-    def test_empty_path_uses_default(self, tmp_path) -> None:
+    @staticmethod
+    def test_empty_path_uses_default(tmp_path) -> None:
         """Test empty path resolves to 'default' subdir."""
         import main
 
@@ -163,7 +166,8 @@ class TestResolveTaskBaseDir:
         finally:
             main.SERVER_OUTPUT_ROOT = original_root
 
-    def test_dot_slash_uses_default(self, tmp_path) -> None:
+    @staticmethod
+    def test_dot_slash_uses_default(tmp_path) -> None:
         """Test './' path resolves to 'default' subdir."""
         import main
 
@@ -177,7 +181,8 @@ class TestResolveTaskBaseDir:
         finally:
             main.SERVER_OUTPUT_ROOT = original_root
 
-    def test_safe_name_creates_subdir(self, tmp_path) -> None:
+    @staticmethod
+    def test_safe_name_creates_subdir(tmp_path) -> None:
         """Test safe name creates appropriate subdirectory."""
         import main
 
@@ -192,7 +197,8 @@ class TestResolveTaskBaseDir:
         finally:
             main.SERVER_OUTPUT_ROOT = original_root
 
-    def test_unsafe_name_raises_http_exception(self, tmp_path) -> None:
+    @staticmethod
+    def test_unsafe_name_raises_http_exception(tmp_path) -> None:
         """Test unsafe names raise HTTP 400."""
         import main
 
@@ -210,7 +216,8 @@ class TestResolveTaskBaseDir:
 class TestResolveCookieFile:
     """Tests for resolve_cookie_file function."""
 
-    def test_no_cookie_file_returns_none(self) -> None:
+    @staticmethod
+    def test_no_cookie_file_returns_none() -> None:
         """Test when no cookie file is configured."""
         import main
 
@@ -222,7 +229,8 @@ class TestResolveCookieFile:
         finally:
             main.cookie_config = original_config
 
-    def test_nonexistent_file_returns_none(self, temp_dir) -> None:
+    @staticmethod
+    def test_nonexistent_file_returns_none(temp_dir) -> None:
         """Test non-existent file returns None."""
         result = resolve_cookie_file("nonexistent.txt")
         assert result is None
@@ -250,7 +258,8 @@ class TestNormalizeString:
         """Test string normalization."""
         assert normalize_string(input_str) == expected
 
-    def test_custom_max_length(self) -> None:
+    @staticmethod
+    def test_custom_max_length() -> None:
         """Test custom max_length parameter."""
         long_str = "a" * 100
         result = normalize_string(long_str, max_length=50)
@@ -261,14 +270,16 @@ class TestNormalizeString:
 class TestEnsureDir:
     """Tests for ensure_dir function."""
 
-    def test_creates_directory(self, temp_dir) -> None:
+    @staticmethod
+    def test_creates_directory(temp_dir) -> None:
         """Test directory creation."""
         new_dir = temp_dir / "new" / "nested" / "dir"
         result = ensure_dir(str(new_dir))
         assert Path(result).exists()
         assert Path(result).is_dir()
 
-    def test_existing_directory(self, temp_dir) -> None:
+    @staticmethod
+    def test_existing_directory(temp_dir) -> None:
         """Test existing directory doesn't raise error."""
         existing = temp_dir / "existing"
         existing.mkdir()
