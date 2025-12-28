@@ -18,18 +18,21 @@ from main import (
 class TestIsRetryableError:
     """Tests for is_retryable_error function."""
 
-    def test_retryable_http_codes(self, retry_config) -> None:
+    @staticmethod
+    def test_retryable_http_codes(retry_config) -> None:
         """Test that configured HTTP codes are retryable."""
         for code in retry_config.retryable_http_codes:
             error = Exception(f"HTTP Error {code}")
             assert is_retryable_error(error, retry_config) is True
 
-    def test_retryable_http_error_alternate_format(self, retry_config) -> None:
+    @staticmethod
+    def test_retryable_http_error_alternate_format(retry_config) -> None:
         """Test alternate HTTP error format."""
         error = Exception("HTTPError: 429")
         assert is_retryable_error(error, retry_config) is True
 
-    def test_retryable_error_patterns(self, retry_config) -> None:
+    @staticmethod
+    def test_retryable_error_patterns(retry_config) -> None:
         """Test various retryable error patterns."""
         retryable_errors = [
             Exception("too many requests"),
@@ -44,7 +47,8 @@ class TestIsRetryableError:
         for error in retryable_errors:
             assert is_retryable_error(error, retry_config) is True, f"Failed for: {error}"
 
-    def test_non_retryable_error(self, retry_config) -> None:
+    @staticmethod
+    def test_non_retryable_error(retry_config) -> None:
         """Test that non-retryable errors return False."""
         non_retryable_errors = [
             Exception("video unavailable"),
@@ -58,7 +62,8 @@ class TestIsRetryableError:
         for error in non_retryable_errors:
             assert is_retryable_error(error, retry_config) is False, f"Should not retry: {error}"
 
-    def test_case_insensitive_matching(self, retry_config) -> None:
+    @staticmethod
+    def test_case_insensitive_matching(retry_config) -> None:
         """Test that error matching is case-insensitive."""
         error = Exception("Too Many Requests")
         assert is_retryable_error(error, retry_config) is True
@@ -66,7 +71,8 @@ class TestIsRetryableError:
         error = Exception("RATE LIMIT")
         assert is_retryable_error(error, retry_config) is True
 
-    def test_custom_retryable_codes(self) -> None:
+    @staticmethod
+    def test_custom_retryable_codes() -> None:
         """Test custom retryable HTTP codes."""
         config = RetryConfig(retryable_http_codes=[503, 504])
 
@@ -80,12 +86,14 @@ class TestIsRetryableError:
 class TestCalculateBackoff:
     """Tests for calculate_backoff function."""
 
-    def test_zero_attempt_no_backoff(self, retry_config) -> None:
+    @staticmethod
+    def test_zero_attempt_no_backoff(retry_config) -> None:
         """Test that attempt 0 returns base backoff."""
         delay = calculate_backoff(0, retry_config)
         assert delay == retry_config.backoff_base
 
-    def test_exponential_backoff(self, retry_config) -> None:
+    @staticmethod
+    def test_exponential_backoff(retry_config) -> None:
         """Test exponential backoff calculation."""
         base = retry_config.backoff_base
         multiplier = retry_config.backoff_multiplier
@@ -98,7 +106,8 @@ class TestCalculateBackoff:
         assert delay1 == base * multiplier
         assert delay2 == base * (multiplier**2)
 
-    def test_backoff_with_jitter(self) -> None:
+    @staticmethod
+    def test_backoff_with_jitter() -> None:
         """Test that jitter adds randomness to backoff."""
         config = RetryConfig(
             backoff_base=1.0,
@@ -118,7 +127,8 @@ class TestCalculateBackoff:
         # Not all delays should be the same
         assert len(set(delays)) > 1
 
-    def test_backoff_without_jitter(self, retry_config) -> None:
+    @staticmethod
+    def test_backoff_without_jitter(retry_config) -> None:
         """Test that backoff is predictable without jitter."""
         config = RetryConfig(
             backoff_base=1.0,
@@ -131,7 +141,8 @@ class TestCalculateBackoff:
 
         assert delay1 == delay2 == 2.0
 
-    def test_backoff_never_negative(self) -> None:
+    @staticmethod
+    def test_backoff_never_negative() -> None:
         """Test that backoff delay is never negative."""
         config = RetryConfig(
             backoff_base=0.1,
@@ -147,7 +158,8 @@ class TestCalculateBackoff:
 class TestRetryWithBackoff:
     """Tests for retry_with_backoff function."""
 
-    def test_success_on_first_attempt(self, retry_config) -> None:
+    @staticmethod
+    def test_success_on_first_attempt(retry_config) -> None:
         """Test successful execution on first attempt."""
         func = MagicMock(return_value="success")
 
@@ -156,7 +168,8 @@ class TestRetryWithBackoff:
         assert result == "success"
         func.assert_called_once_with("arg1", kwarg="kwarg1")
 
-    def test_retry_on_retryable_error(self, retry_config) -> None:
+    @staticmethod
+    def test_retry_on_retryable_error(retry_config) -> None:
         """Test that retryable errors trigger retries."""
         func = MagicMock(
             side_effect=[
@@ -171,7 +184,8 @@ class TestRetryWithBackoff:
         assert result == "success"
         assert func.call_count == 3
 
-    def test_fail_after_max_retries(self, retry_config) -> None:
+    @staticmethod
+    def test_fail_after_max_retries(retry_config) -> None:
         """Test that function fails after max retries."""
         func = MagicMock(side_effect=Exception("HTTP Error 429"))
 
@@ -181,7 +195,8 @@ class TestRetryWithBackoff:
         assert "HTTP Error 429" in str(exc_info.value)
         assert func.call_count == retry_config.max_retries + 1
 
-    def test_no_retry_on_non_retryable_error(self, retry_config) -> None:
+    @staticmethod
+    def test_no_retry_on_non_retryable_error(retry_config) -> None:
         """Test that non-retryable errors fail immediately."""
         func = MagicMock(side_effect=Exception("video unavailable"))
 
@@ -191,7 +206,8 @@ class TestRetryWithBackoff:
         assert "video unavailable" in str(exc_info.value)
         func.assert_called_once()  # Should not retry
 
-    def test_retry_count_matches_config(self) -> None:
+    @staticmethod
+    def test_retry_count_matches_config() -> None:
         """Test that number of retries matches config.max_retries."""
         config = RetryConfig(max_retries=3, backoff_base=0.01)
         func = MagicMock(side_effect=Exception("too many requests"))
@@ -202,7 +218,8 @@ class TestRetryWithBackoff:
         # Should call initial attempt + 3 retries
         assert func.call_count == 4
 
-    def test_backoff_delays(self) -> None:
+    @staticmethod
+    def test_backoff_delays() -> None:
         """Test that appropriate backoff delays are used."""
         config = RetryConfig(
             max_retries=2,
@@ -226,7 +243,8 @@ class TestRetryWithBackoff:
         # Total should be at least 0.15s
         assert elapsed >= 0.14  # Small tolerance for timing
 
-    def test_kwargs_passed_correctly(self, retry_config) -> None:
+    @staticmethod
+    def test_kwargs_passed_correctly(retry_config) -> None:
         """Test that kwargs are passed through correctly."""
         func = MagicMock(return_value="result")
 
@@ -244,7 +262,8 @@ class TestRetryWithBackoff:
             another=123,
         )
 
-    def test_returns_function_result(self, retry_config) -> None:
+    @staticmethod
+    def test_returns_function_result(retry_config) -> None:
         """Test that function return value is passed through."""
         expected_results = [
             {"status": "completed", "title": "Video"},
@@ -259,7 +278,8 @@ class TestRetryWithBackoff:
             result = retry_with_backoff(func, retry_config)
             assert result == expected
 
-    def test_custom_exception_type(self, retry_config) -> None:
+    @staticmethod
+    def test_custom_exception_type(retry_config) -> None:
         """Test that custom exception types can be retried."""
 
         class CustomError(Exception):
@@ -285,7 +305,8 @@ class TestRetryWithBackoff:
 
         assert func.call_count == 1
 
-    def test_partial_success_case(self) -> None:
+    @staticmethod
+    def test_partial_success_case() -> None:
         """Test handling of partial success scenarios."""
         config = RetryConfig(
             max_retries=1,

@@ -25,7 +25,8 @@ class TestYtDlpContract:
     our application expects, catching any breaking changes in yt-dlp responses.
     """
 
-    def test_get_info_returns_expected_fields(self):
+    @staticmethod
+    def test_get_info_returns_expected_fields():
         """Verify /info endpoint returns expected fields from yt-dlp."""
         # Use a reliable, permanent test video (Rick Astley - Never Gonna Give You Up)
         url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
@@ -44,7 +45,8 @@ class TestYtDlpContract:
         print(f"✓ Title: {info['title']}")
         print(f"✓ Formats available: {len(info['formats'])}")
 
-    def test_list_formats_returns_expected_structure(self):
+    @staticmethod
+    def test_list_formats_returns_expected_structure():
         """Verify /formats returns expected structure from yt-dlp."""
         url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 
@@ -61,7 +63,8 @@ class TestYtDlpContract:
             print(f"\n✓ Got {len(formats)} formats")
             print(f"✓ Sample format: {f.get('format_id')} - {f.get('ext')}")
 
-    def test_subtitles_extraction_structure(self):
+    @staticmethod
+    def test_subtitles_extraction_structure():
         """
         Verify subtitle extraction returns expected structure.
 
@@ -95,7 +98,8 @@ class TestYtDlpContract:
             print(f"✓ Downloaded: {len(result.get('downloaded', []))} files")
             print(f"✓ Failed: {len(result.get('failed', []))} errors")
 
-    def test_youtube_extractor_args_compat(self):
+    @staticmethod
+    def test_youtube_extractor_args_compat():
         """
         Verify that our YouTube extractor_args still work.
 
@@ -111,7 +115,8 @@ class TestYtDlpContract:
         assert info is not None
         print("\n✓ YouTube extractor_args compatible")
 
-    def test_audio_download_structure(self):
+    @staticmethod
+    def test_audio_download_structure():
         """Verify audio download returns expected structure."""
         url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 

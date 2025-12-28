@@ -10,14 +10,16 @@ from main import JobType, State, Task
 class TestState:
     """Tests for State class."""
 
-    def test_init_creates_database(self, temp_db: str) -> None:
+    @staticmethod
+    def test_init_creates_database(temp_db: str) -> None:
         """Test that initialization creates the database file."""
         State(db_file=temp_db)
         import pathlib
 
         assert pathlib.Path(temp_db).exists()
 
-    def test_init_loads_existing_tasks(self, temp_db: str) -> None:
+    @staticmethod
+    def test_init_loads_existing_tasks(temp_db: str) -> None:
         """Test that initialization loads existing tasks."""
         # Create a state and add a task
         state1 = State(db_file=temp_db)
@@ -36,7 +38,8 @@ class TestState:
         assert loaded_task.id == task_id
         assert loaded_task.status == "completed"
 
-    def test_add_task(self, test_state: State) -> None:
+    @staticmethod
+    def test_add_task(test_state: State) -> None:
         """Test adding a new task."""
         task_id = test_state.add_task(
             job_type=JobType.video,
@@ -53,7 +56,8 @@ class TestState:
         assert task.status == "pending"
         assert task.format == "best"
 
-    def test_add_task_creates_output_directory(self, test_state: State, temp_dir) -> None:
+    @staticmethod
+    def test_add_task_creates_output_directory(test_state: State, temp_dir) -> None:
         """Test that add_task creates the output directory."""
         import main
 
@@ -76,13 +80,15 @@ class TestState:
         finally:
             main.SERVER_OUTPUT_ROOT = original_root
 
-    def test_get_task_not_found(self, test_state: State) -> None:
+    @staticmethod
+    def test_get_task_not_found(test_state: State) -> None:
         """Test getting a non-existent task."""
         fake_id = str(uuid.uuid4())
         task = test_state.get_task(fake_id)
         assert task is None
 
-    def test_update_task_status(self, test_state: State) -> None:
+    @staticmethod
+    def test_update_task_status(test_state: State) -> None:
         """Test updating task status."""
         task_id = test_state.add_task(
             job_type=JobType.subtitles,
@@ -97,7 +103,8 @@ class TestState:
         assert task is not None
         assert task.status == "running"
 
-    def test_update_task_with_result(self, test_state: State) -> None:
+    @staticmethod
+    def test_update_task_with_result(test_state: State) -> None:
         """Test updating task with result."""
         task_id = test_state.add_task(
             job_type=JobType.video,
@@ -114,7 +121,8 @@ class TestState:
         assert task.status == "completed"
         assert task.result == result
 
-    def test_update_task_with_error(self, test_state: State) -> None:
+    @staticmethod
+    def test_update_task_with_error(test_state: State) -> None:
         """Test updating task with error."""
         task_id = test_state.add_task(
             job_type=JobType.audio,
@@ -131,7 +139,8 @@ class TestState:
         assert task.status == "failed"
         assert task.error == error_msg
 
-    def test_update_task_with_result_and_error(self, test_state: State) -> None:
+    @staticmethod
+    def test_update_task_with_result_and_error(test_state: State) -> None:
         """Test updating task with both result and error."""
         task_id = test_state.add_task(
             job_type=JobType.subtitles,
@@ -151,7 +160,8 @@ class TestState:
         assert task.result == result
         assert task.error == error_msg
 
-    def test_update_nonexistent_task_logs_warning(self, test_state: State, caplog) -> None:
+    @staticmethod
+    def test_update_nonexistent_task_logs_warning(test_state: State, caplog) -> None:
         """Test that updating a non-existent task logs a warning."""
         fake_id = str(uuid.uuid4())
         test_state.update_task(fake_id, "running")
@@ -159,12 +169,14 @@ class TestState:
         # Should not crash, just log a warning
         assert "Attempted to update missing task" in caplog.text or True
 
-    def test_list_tasks_empty(self, test_state: State) -> None:
+    @staticmethod
+    def test_list_tasks_empty(test_state: State) -> None:
         """Test listing tasks when database is empty."""
         tasks = test_state.list_tasks()
         assert tasks == []
 
-    def test_list_tasks_with_multiple_tasks(self, test_state: State) -> None:
+    @staticmethod
+    def test_list_tasks_with_multiple_tasks(test_state: State) -> None:
         """Test listing multiple tasks."""
         id1 = test_state.add_task(JobType.video, "url1", "test", "mp4")
         id2 = test_state.add_task(JobType.audio, "url2", "test", "mp3")
@@ -180,7 +192,8 @@ class TestState:
         task_ids = {t.id for t in tasks}
         assert task_ids == {id1, id2, id3}
 
-    def test_tasks_persist_across_state_instances(self, temp_db: str) -> None:
+    @staticmethod
+    def test_tasks_persist_across_state_instances(temp_db: str) -> None:
         """Test that tasks persist across different State instances."""
         # First instance: add tasks
         state1 = State(db_file=temp_db)
@@ -194,7 +207,8 @@ class TestState:
         assert tasks[0].id == id1
         assert tasks[0].result == {"title": "Video 1"}
 
-    def test_task_json_serialization(self, test_state: State) -> None:
+    @staticmethod
+    def test_task_json_serialization(test_state: State) -> None:
         """Test that task data is properly serialized to JSON."""
         task_id = test_state.add_task(
             job_type=JobType.video,
@@ -223,7 +237,8 @@ class TestState:
 class TestTaskModel:
     """Tests for Task Pydantic model."""
 
-    def test_task_creation(self) -> None:
+    @staticmethod
+    def test_task_creation() -> None:
         """Test creating a Task instance."""
         task = Task(
             id=str(uuid.uuid4()),
@@ -238,7 +253,8 @@ class TestTaskModel:
         assert task.result is None
         assert task.error is None
 
-    def test_task_with_result_and_error(self) -> None:
+    @staticmethod
+    def test_task_with_result_and_error() -> None:
         """Test Task with result and error fields."""
         task = Task(
             id=str(uuid.uuid4()),
