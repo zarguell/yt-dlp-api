@@ -2,9 +2,13 @@
 Unit tests for State (database) class.
 """
 
+import logging
 import uuid
 
-from main import JobType, State, Task
+from main import JobType, Task
+from state import State
+
+logger = logging.getLogger("yt-dlp-api")
 
 
 class TestState:
@@ -12,8 +16,8 @@ class TestState:
 
     @staticmethod
     def test_init_creates_database(temp_db: str) -> None:
-        """Test that initialization creates the database file."""
-        State(db_file=temp_db)
+        """Test that initialization creates database file."""
+        State(db_file=temp_db, logger=logger)
         import pathlib
 
         assert pathlib.Path(temp_db).exists()
@@ -22,7 +26,7 @@ class TestState:
     def test_init_loads_existing_tasks(temp_db: str) -> None:
         """Test that initialization loads existing tasks."""
         # Create a state and add a task
-        state1 = State(db_file=temp_db)
+        state1 = State(db_file=temp_db, logger=logger)
         task_id = state1.add_task(
             job_type=JobType.video,
             url="https://example.com/video",
@@ -32,7 +36,7 @@ class TestState:
         state1.update_task(task_id, "completed", result={"title": "Test Video"})
 
         # Create a new state instance and verify task is loaded
-        state2 = State(db_file=temp_db)
+        state2 = State(db_file=temp_db, logger=logger)
         loaded_task = state2.get_task(task_id)
         assert loaded_task is not None
         assert loaded_task.id == task_id
@@ -59,26 +63,18 @@ class TestState:
     @staticmethod
     def test_add_task_creates_output_directory(test_state: State, temp_dir) -> None:
         """Test that add_task creates the output directory."""
-        import main
+        import pathlib
 
-        original_root = main.SERVER_OUTPUT_ROOT
-        main.SERVER_OUTPUT_ROOT = temp_dir / "downloads"
+        task_id = test_state.add_task(
+            job_type=JobType.audio,
+            url="https://example.com/audio",
+            base_output_path="test-output",
+            fmt="mp3",
+        )
 
-        try:
-            task_id = test_state.add_task(
-                job_type=JobType.audio,
-                url="https://example.com/audio",
-                base_output_path="test-output",
-                fmt="mp3",
-            )
-
-            task = test_state.get_task(task_id)
-            assert task is not None
-            import pathlib
-
-            assert pathlib.Path(task.task_output_path).exists()
-        finally:
-            main.SERVER_OUTPUT_ROOT = original_root
+        task = test_state.get_task(task_id)
+        assert task is not None
+        assert pathlib.Path(task.task_output_path).exists()
 
     @staticmethod
     def test_get_task_not_found(test_state: State) -> None:
@@ -196,12 +192,12 @@ class TestState:
     def test_tasks_persist_across_state_instances(temp_db: str) -> None:
         """Test that tasks persist across different State instances."""
         # First instance: add tasks
-        state1 = State(db_file=temp_db)
+        state1 = State(db_file=temp_db, logger=logger)
         id1 = state1.add_task(JobType.video, "url1", "test", "mp4")
         state1.update_task(id1, "completed", result={"title": "Video 1"})
 
         # Second instance: verify tasks are loaded
-        state2 = State(db_file=temp_db)
+        state2 = State(db_file=temp_db, logger=logger)
         tasks = state2.list_tasks()
         assert len(tasks) == 1
         assert tasks[0].id == id1
@@ -228,7 +224,7 @@ class TestState:
         test_state.update_task(task_id, "completed", result=complex_result)
 
         # Reload and verify
-        new_state = State(db_file=test_state.db_file)
+        new_state = State(db_file=test_state.db_file, logger=logger)
         task = new_state.get_task(task_id)
         assert task is not None
         assert task.result == complex_result
