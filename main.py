@@ -1,17 +1,13 @@
 import asyncio
 import contextvars
-import datetime
-import json
 import logging
 import os
 import random
-import sqlite3
 import sys
 import time
 import uuid
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from enum import Enum
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, TypeVar, cast
@@ -22,9 +18,35 @@ import yt_dlp
 from fastapi import Depends, FastAPI, File, HTTPException, Query, Security, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import APIKeyHeader
-from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 from starlette.requests import Request
+
+import utils
+from config import (
+    DEFAULT_MASTER_API_KEY_ENV,
+    AuthConfig,
+    CookieConfig,
+    RetryConfig,
+)
+from models import (
+    AudioRequest,
+    DownloadRequest,
+    EnglishMode,
+    JobType,
+    SubtitleFormat,
+    SubtitlePreference,
+    SubtitlesRequest,
+    SubtitlesV2Request,
+    Task,
+)
+from state import State
+from utils import (
+    COOKIES_DIR,
+    ensure_dir,
+    normalize_string,
+    resolve_cookie_file,
+    resolve_task_base_dir,
+)
 
 # ----------------------------
 # Logging setup
@@ -54,107 +76,16 @@ logger.addFilter(RequestIdFilter())
 # Auth settings
 # ----------------------------
 
-DEFAULT_API_KEY_HEADER_NAME = "X-API-Key"
-DEFAULT_API_KEY_ENABLED_ENV = "API_KEY_AUTH_ENABLED"
-DEFAULT_MASTER_API_KEY_ENV = "API_MASTER_KEY"
-
-# Retry configuration environment variables
-DEFAULT_MAX_RETRIES_ENV = "DEFAULT_MAX_RETRIES"
-DEFAULT_RETRY_BACKOFF_ENV = "DEFAULT_RETRY_BACKOFF"
-DEFAULT_RETRY_BACKOFF_MULTIPLIER_ENV = "DEFAULT_RETRY_BACKOFF_MULTIPLIER"
-DEFAULT_RETRY_JITTER_ENV = "DEFAULT_RETRY_JITTER"
-
-# Cookie configuration environment variables
-DEFAULT_COOKIES_FILE_ENV = "COOKIES_FILE"
-
-
-def _env_truthy(value: str | None, *, default: bool = False) -> bool:
-    """Parse common truthy/falsey strings from environment variables."""
-    if value is None:
-        return default
-    normalized = value.strip().lower()
-    if normalized in {"1", "true", "t", "yes", "y", "on"}:
-        return True
-    if normalized in {"0", "false", "f", "no", "n", "off"}:
-        return False
-    return default
-
-
-def _env_int(value: str | None, *, default: int) -> int:
-    """Parse integer from environment variable with default."""
-    if value is None:
-        return default
-    try:
-        return int(value)
-    except ValueError:
-        return default
-
-
-def _env_float(value: str | None, *, default: float) -> float:
-    """Parse float from environment variable with default."""
-    if value is None:
-        return default
-    try:
-        return float(value)
-    except ValueError:
-        return default
-
-
-class AuthConfig(BaseModel):
-    """
-    Authentication configuration loaded from environment variables.
-
-    - enabled: global kill-switch for API key auth
-    - master_key: master API key value used for authentication
-    - header_name: header used to pass key (default X-API-Key)
-    """
-
-    enabled: bool = Field(default=False)
-    master_key: str | None = Field(default=None)
-    header_name: str = Field(default=DEFAULT_API_KEY_HEADER_NAME)
-
-    @classmethod
-    def from_env(cls) -> "AuthConfig":
-        enabled = _env_truthy(os.getenv(DEFAULT_API_KEY_ENABLED_ENV), default=False)
-        master_key = os.getenv(DEFAULT_MASTER_API_KEY_ENV)
-        header_name = os.getenv("API_KEY_HEADER_NAME", DEFAULT_API_KEY_HEADER_NAME).strip()
-        cfg = cls(enabled=enabled, master_key=master_key, header_name=header_name)
-        logger.info(
-            "Auth config loaded enabled=%s header_name=%s master_key_set=%s",
-            cfg.enabled,
-            cfg.header_name,
-            bool(cfg.master_key),
-        )
-        return cfg
-
-
-class CookieConfig(BaseModel):
-    """
-    Cookie configuration loaded from environment variables.
-
-    - cookies_file: path to a cookies.txt file to use for all downloads (optional)
-    """
-
-    cookies_file: str | None = Field(default=None)
-
-    @classmethod
-    def from_env(cls) -> "CookieConfig":
-        cookies_file = os.getenv(DEFAULT_COOKIES_FILE_ENV)
-        if cookies_file:
-            cookies_file = cookies_file.strip()
-            # Verify the file exists
-            if not Path(cookies_file).is_file():
-                logger.warning("COOKIES_FILE points to non-existent file=%s", cookies_file)
-                cookies_file = None
-            else:
-                logger.info("Cookie config loaded cookies_file=%s", cookies_file)
-        cfg = cls(cookies_file=cookies_file)
-        return cfg
-
+# ----------------------------
+# Auth settings
+# ----------------------------
 
 auth_config = AuthConfig.from_env()
 cookie_config = CookieConfig.from_env()
 api_key_header = APIKeyHeader(name=auth_config.header_name, auto_error=False)
+
+# Initialize utils with config
+utils.cookie_config = cookie_config
 
 # default_retry_config will be initialized after RetryConfig is defined
 
@@ -179,346 +110,8 @@ async def require_api_key(api_key: str | None = Security(api_key_header)) -> Non
 
 
 # ----------------------------
-# Output path hardening
-# ----------------------------
-
-SERVER_OUTPUT_ROOT_ENV = "SERVER_OUTPUT_ROOT"
-DEFAULT_SERVER_OUTPUT_ROOT = "./downloads"
-SERVER_OUTPUT_ROOT = Path(os.getenv(SERVER_OUTPUT_ROOT_ENV, DEFAULT_SERVER_OUTPUT_ROOT))
-
-# Cookie upload directory
-COOKIES_DIR_ENV = "COOKIES_DIR"
-DEFAULT_COOKIES_DIR = "./cookies"
-COOKIES_DIR = Path(os.getenv(COOKIES_DIR_ENV, DEFAULT_COOKIES_DIR))
-COOKIES_DIR.mkdir(parents=True, exist_ok=True)
-
-
-def _is_safe_subdir_name(value: str, *, max_length: int = 80) -> bool:
-    """Validate an API-provided folder label (single subdirectory)."""
-    if not value:
-        return False
-    if len(value) > max_length:
-        return False
-    if "/" in value or "\\" in value:
-        return False
-    if value in {".", ".."}:
-        return False
-    if ".." in value:
-        return False
-
-    allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
-    return all(ch in allowed for ch in value)
-
-
-def resolve_task_base_dir(client_output_path: str) -> Path:
-    """Convert client 'output_path' into a server-controlled base directory."""
-    label = client_output_path.strip()
-    if label in {"", ".", "./"}:
-        label = "default"
-
-    if not _is_safe_subdir_name(label):
-        logger.warning("Rejected unsafe output_path label=%r", label)
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid output_path. Provide a simple folder name (no slashes or '..').",
-        )
-
-    root = SERVER_OUTPUT_ROOT.resolve(strict=False)
-    base = (root / label).resolve(strict=False)
-
-    if not base.is_relative_to(root):
-        logger.warning(
-            "Rejected output_path outside root label=%r base=%s root=%s", label, base, root
-        )
-        raise HTTPException(status_code=400, detail="Invalid output_path (outside server root).")
-
-    base.mkdir(parents=True, exist_ok=True)
-    logger.debug("Resolved base output dir label=%r base=%s", label, base)
-    return base
-
-
-# ----------------------------
-# Utilities
-# ----------------------------
-
-
-def resolve_cookie_file(request_cookie_file: str | None) -> str | None:
-    """
-    Resolve the cookie file path from request and environment configuration.
-
-    Priority:
-    1. Request-specific cookie_file parameter (relative to COOKIES_DIR)
-    2. Global COOKIES_FILE environment variable (absolute or relative to COOKIES_DIR)
-
-    All paths are validated to ensure they remain within the COOKIES_DIR to prevent
-    path traversal attacks.
-
-    Returns the absolute path to the cookie file, or None if no cookies are configured.
-    """
-    cookie_file = request_cookie_file or cookie_config.cookies_file
-
-    if not cookie_file:
-        return None
-
-    cookie_path = Path(cookie_file)
-
-    # If it's a relative path, treat it as relative to COOKIES_DIR
-    if not cookie_path.is_absolute():
-        cookie_path = (COOKIES_DIR / cookie_file).resolve(strict=False)
-    else:
-        # For absolute paths, just resolve it (we'll validate containment next)
-        cookie_path = cookie_path.resolve(strict=False)
-
-    # Validate the path doesn't escape COOKIES_DIR
-    if not cookie_path.is_relative_to(COOKIES_DIR.resolve(strict=False)):
-        logger.warning("Rejected cookie path outside COOKIES_DIR path=%s", cookie_path)
-        raise HTTPException(
-            status_code=400,
-            detail="Cookie file path must be within the cookies directory",
-        )
-
-    # Verify the file exists
-    if not cookie_path.is_file():
-        logger.warning("Cookie file not found path=%s", cookie_path)
-        return None
-
-    return str(cookie_path)
-
-
-def normalize_string(value: str, max_length: int = 200) -> str:
-    """Trim whitespace, replace unsafe filename characters with underscores, and cap length."""
-    value = value.strip()
-    unsafe_chars = ["/", "\\", ":", "*", "?", '"', "<", ">", "|"]
-    for ch in unsafe_chars:
-        value = value.replace(ch, "_")
-    if len(value) > max_length:
-        value = value[: max_length - 3] + "..."
-    return value
-
-
-def ensure_dir(path: str) -> str:
-    Path(path).mkdir(parents=True, exist_ok=True)
-    return path
-
-
-# ----------------------------
 # Domain models
 # ----------------------------
-
-
-class JobType(str, Enum):
-    video = "video"
-    subtitles = "subtitles"
-    subtitles_v2 = "subtitles_v2"
-    audio = "audio"
-
-
-class Task(BaseModel):
-    id: str
-    job_type: JobType
-    url: str
-    base_output_path: str
-    task_output_path: str
-    format: str
-    status: str
-    result: dict[str, Any] | None = None
-    error: str | None = None
-
-
-class DownloadRequest(BaseModel):
-    url: str
-    output_path: str = "default"
-    format: str = "bestvideo+bestaudio/best"
-    quiet: bool = False
-    cookie_file: str | None = Field(
-        default=None,
-        description="Path to cookies.txt file for authentication (overrides COOKIES_FILE env var)",
-    )
-
-
-class SubtitlesRequest(BaseModel):
-    url: str
-    output_path: str = "default"
-    languages: list[str] = Field(default_factory=lambda: ["en", "en.*"])
-    write_automatic: bool = True
-    write_manual: bool = True
-    convert_to: str | None = "srt"
-    quiet: bool = False
-    cookie_file: str | None = Field(
-        default=None,
-        description="Path to cookies.txt file for authentication (overrides COOKIES_FILE env var)",
-    )
-    max_retries: int | None = Field(
-        default=None,
-        ge=0,
-        description="Maximum number of retry attempts (overrides DEFAULT_MAX_RETRIES env var)",
-    )
-    retry_backoff: float | None = Field(
-        default=None,
-        ge=0,
-        description="Initial backoff delay in seconds (overrides DEFAULT_RETRY_BACKOFF env var)",
-    )
-
-
-class EnglishMode(str, Enum):
-    """Policy for English subtitle selection."""
-
-    best_one = "best_one"  # Pick single best English track
-    all_english = "all_english"  # Download all English variants (en, en-US, en-GB, etc.)
-    explicit = "explicit"  # Use explicit language list from languages field
-
-
-class SubtitlePreference(str, Enum):
-    """Preference for manual vs automatic subtitles."""
-
-    manual_then_auto = "manual_then_auto"  # Prefer manual, fall back to auto
-    auto_only = "auto_only"  # Only automatic captions
-    manual_only = "manual_only"  # Only manual subtitles
-
-
-class SubtitleFormat(str, Enum):
-    """Desired subtitle output format(s)."""
-
-    srt = "srt"  # SRT format only
-    vtt = "vtt"  # WebVTT format only
-    both = "both"  # Both SRT and VTT
-
-
-class SubtitlesV2Request(BaseModel):
-    """Enhanced subtitles request with policy-based selection."""
-
-    url: str
-    output_path: str = "default"
-
-    # Language selection policy
-    english_mode: EnglishMode = Field(
-        default=EnglishMode.best_one,
-        description=(
-            "Policy for English subtitle selection. "
-            "'best_one' picks the single best English track, "
-            "'all_english' downloads all English variants, "
-            "'explicit' uses the languages field directly."
-        ),
-    )
-    languages: list[str] = Field(
-        default_factory=lambda: [],
-        description=(
-            "Explicit language list (only used when english_mode='explicit'). "
-            "Supports regex patterns like 'en.*'."
-        ),
-    )
-
-    # Manual vs automatic preference
-    prefer: SubtitlePreference = Field(
-        default=SubtitlePreference.manual_then_auto,
-        description=(
-            "Preference for manual vs automatic subtitles. "
-            "'manual_then_auto' prefers manual subtitles with automatic fallback, "
-            "'auto_only' uses only automatic captions, "
-            "'manual_only' uses only manual subtitles."
-        ),
-    )
-
-    # Format handling
-    formats: SubtitleFormat = Field(
-        default=SubtitleFormat.srt,
-        description=(
-            "Desired subtitle output format(s). "
-            "'srt' returns SRT only, 'vtt' returns WebVTT only, "
-            "'both' returns both formats."
-        ),
-    )
-
-    # Advanced language ranking for best_one mode
-    english_rank: list[str] = Field(
-        default_factory=lambda: ["en", "en-US", "en-GB", "en.*"],
-        description=(
-            "Ordered ranking of English language tags for 'best_one' mode. "
-            "First available match is selected. Supports regex patterns."
-        ),
-    )
-
-    # Common options
-    quiet: bool = False
-    cookie_file: str | None = Field(
-        default=None,
-        description="Path to cookies.txt file for authentication (overrides COOKIES_FILE env var)",
-    )
-    max_retries: int | None = Field(
-        default=None,
-        ge=0,
-        description="Maximum number of retry attempts (overrides DEFAULT_MAX_RETRIES env var)",
-    )
-    retry_backoff: float | None = Field(
-        default=None,
-        ge=0,
-        description="Initial backoff delay in seconds (overrides DEFAULT_RETRY_BACKOFF env var)",
-    )
-
-
-class AudioRequest(BaseModel):
-    url: str
-    output_path: str = "default"
-    audio_format: str = "mp3"
-    audio_quality: str | None = None
-    quiet: bool = False
-    cookie_file: str | None = Field(
-        default=None,
-        description="Path to cookies.txt file for authentication (overrides COOKIES_FILE env var)",
-    )
-    max_retries: int | None = Field(
-        default=None,
-        ge=0,
-        description="Maximum number of retry attempts (overrides DEFAULT_MAX_RETRIES env var)",
-    )
-    retry_backoff: float | None = Field(
-        default=None,
-        ge=0,
-        description="Initial backoff delay in seconds (overrides DEFAULT_RETRY_BACKOFF env var)",
-    )
-
-
-class RetryConfig(BaseModel):
-    """Configuration for retry behavior."""
-
-    max_retries: int = Field(
-        default_factory=lambda: _env_int(os.getenv(DEFAULT_MAX_RETRIES_ENV), default=3),
-        ge=0,
-        description="Maximum number of retry attempts",
-    )
-    backoff_base: float = Field(
-        default_factory=lambda: _env_float(os.getenv(DEFAULT_RETRY_BACKOFF_ENV), default=5.0),
-        ge=0,
-        description="Base backoff delay in seconds",
-    )
-    backoff_multiplier: float = Field(
-        default_factory=lambda: _env_float(
-            os.getenv(DEFAULT_RETRY_BACKOFF_MULTIPLIER_ENV), default=2.0
-        ),
-        ge=1.0,
-        description="Exponential backoff multiplier",
-    )
-    jitter: bool = Field(
-        default_factory=lambda: _env_truthy(os.getenv(DEFAULT_RETRY_JITTER_ENV), default=True),
-        description="Add random jitter to backoff to avoid thundering herd",
-    )
-    retryable_http_codes: list[int] = Field(
-        default_factory=lambda: [429, 500, 502, 503, 504],
-        description="HTTP status codes that trigger retry",
-    )
-
-    @classmethod
-    def from_env(cls) -> "RetryConfig":
-        """Create RetryConfig from environment variables."""
-        cfg = cls()
-        logger.info(
-            "Retry config loaded from env max_retries=%s backoff_base=%s backoff_multiplier=%s jitter=%s",
-            cfg.max_retries,
-            cfg.backoff_base,
-            cfg.backoff_multiplier,
-            cfg.jitter,
-        )
-        return cfg
 
 
 # Initialize global retry config from environment
@@ -620,187 +213,7 @@ def retry_with_backoff(
 # ----------------------------
 
 
-class State:
-    def __init__(self, db_file: str = "tasks.db"):
-        self.tasks: dict[str, Task] = {}
-        self.db_file = db_file
-        self._init_db()
-        self._load_tasks()
-
-    def _init_db(self) -> None:
-        logger.info("Initializing database db_file=%s", self.db_file)
-        conn = sqlite3.connect(self.db_file)
-        cur = conn.cursor()
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS tasks (
-                id TEXT PRIMARY KEY,
-                job_type TEXT NOT NULL,
-                url TEXT NOT NULL,
-                base_output_path TEXT NOT NULL,
-                task_output_path TEXT NOT NULL,
-                format TEXT NOT NULL,
-                status TEXT NOT NULL,
-                result TEXT,
-                error TEXT,
-                timestamp TEXT NOT NULL
-            )
-            """
-        )
-        conn.commit()
-        conn.close()
-
-    def _load_tasks(self) -> None:
-        start = time.monotonic()
-        try:
-            conn = sqlite3.connect(self.db_file)
-            cur = conn.cursor()
-            cur.execute(
-                """
-                SELECT id, job_type, url, base_output_path, task_output_path,
-                       format, status, result, error
-                FROM tasks
-                """
-            )
-            rows = cur.fetchall()
-            for row in rows:
-                (
-                    task_id,
-                    job_type,
-                    url,
-                    base_output_path,
-                    task_output_path,
-                    fmt,
-                    status,
-                    result_json,
-                    error,
-                ) = row
-                result = json.loads(result_json) if result_json else None
-                self.tasks[task_id] = Task(
-                    id=task_id,
-                    job_type=JobType(job_type),
-                    url=url,
-                    base_output_path=base_output_path,
-                    task_output_path=task_output_path,
-                    format=fmt,
-                    status=status,
-                    result=result,
-                    error=error,
-                )
-            conn.close()
-            logger.info(
-                "Loaded tasks from database count=%d elapsed_ms=%d",
-                len(rows),
-                int((time.monotonic() - start) * 1000),
-            )
-        except Exception:
-            logger.exception("Error loading tasks from database db_file=%s", self.db_file)
-
-    def _save_task(self, task: Task) -> None:
-        try:
-            self.tasks[task.id] = task
-            conn = sqlite3.connect(self.db_file)
-            cur = conn.cursor()
-
-            timestamp = datetime.datetime.now().isoformat()
-            result_json = json.dumps(task.result) if task.result else None
-
-            cur.execute(
-                """
-                INSERT OR REPLACE INTO tasks
-                (id, job_type, url, base_output_path, task_output_path, format,
-                 status, result, error, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    task.id,
-                    task.job_type.value,
-                    task.url,
-                    task.base_output_path,
-                    task.task_output_path,
-                    task.format,
-                    task.status,
-                    result_json,
-                    task.error,
-                    timestamp,
-                ),
-            )
-            conn.commit()
-            conn.close()
-            logger.debug(
-                "Saved task task_id=%s status=%s job_type=%s",
-                task.id,
-                task.status,
-                task.job_type.value,
-            )
-        except Exception:
-            logger.exception("Error saving task to database task_id=%s", task.id)
-
-    def add_task(self, job_type: JobType, url: str, base_output_path: str, fmt: str) -> str:
-        task_id = str(uuid.uuid4())
-        base = resolve_task_base_dir(base_output_path)
-        task_dir = (base / task_id).resolve(strict=False)
-
-        if not task_dir.is_relative_to(base.resolve(strict=False)):
-            logger.error(
-                "Task dir containment check failed task_id=%s base=%s task_dir=%s",
-                task_id,
-                base,
-                task_dir,
-            )
-            raise HTTPException(status_code=400, detail="Invalid task directory resolution.")
-
-        task_dir.mkdir(parents=True, exist_ok=True)
-
-        task = Task(
-            id=task_id,
-            job_type=job_type,
-            url=url,
-            base_output_path=str(base),
-            task_output_path=str(task_dir),
-            format=fmt,
-            status="pending",
-        )
-        self._save_task(task)
-        logger.info(
-            "Created task task_id=%s job_type=%s base=%s fmt=%s url=%s",
-            task_id,
-            job_type.value,
-            base,
-            fmt,
-            url,
-        )
-        return task_id
-
-    def get_task(self, task_id: str) -> Task | None:
-        return self.tasks.get(task_id)
-
-    def update_task(
-        self,
-        task_id: str,
-        status: str,
-        result: dict[str, Any] | None = None,
-        error: str | None = None,
-    ) -> None:
-        task = self.tasks.get(task_id)
-        if not task:
-            logger.warning("Attempted to update missing task task_id=%s status=%s", task_id, status)
-            return
-
-        task.status = status
-        if result is not None:
-            task.result = result
-        if error is not None:
-            task.error = error
-
-        self._save_task(task)
-        logger.info("Updated task task_id=%s status=%s", task_id, status)
-
-    def list_tasks(self) -> list[Task]:
-        return list(self.tasks.values())
-
-
-state = State()
+state = State(logger=logger)
 
 
 # ----------------------------
