@@ -47,8 +47,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 03-01: Create service.py with YtDlpService class
-- [ ] 03-02: Update imports and verify tests pass
+- [x] 03-01: Create service.py with YtDlpService class ✓
+- [x] 03-02: Update imports and verify tests pass ✓
+- [ ] 03-03: Fix test imports and verify all tests pass (gap closure)
 - [ ] 03-03: Fix test imports and verify all tests pass (gap closure)
 
 ### Phase 4: Routes Organization
