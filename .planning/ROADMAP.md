@@ -44,11 +44,12 @@ Plans:
 **Goal**: Extract YtDlpService into service.py
 **Depends on**: Phase 2 (State class needed by YtDlpService)
 **Research**: Unlikely (wrapper around existing yt-dlp library)
-**Plans**: 2 plans
+**Plans**: 3 plans
 
 Plans:
 - [ ] 03-01: Create service.py with YtDlpService class
 - [ ] 03-02: Update imports and verify tests pass
+- [ ] 03-03: Fix test imports and verify all tests pass (gap closure)
 
 ### Phase 4: Routes Organization
 **Goal**: Split FastAPI endpoints into feature-based route modules
@@ -87,7 +88,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Foundation | 3/3 | Complete | 2025-01-18 |
 | 2. State & Persistence | 2/2 | Complete | 2026-01-20 |
-| 3. Service Layer | 0/2 | Not started | - |
+| 3. Service Layer | 2/3 | In progress | 2026-01-20 |
 | 4. Routes Organization | 0/3 | Not started | - |
 | 5. Integration Testing | 0/2 | Not started | - |
 | 6. Docker & CI Validation | 0/2 | Not started | - |
