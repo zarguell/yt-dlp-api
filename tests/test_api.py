@@ -10,6 +10,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 import main
+import utils
 
 
 @pytest.fixture
@@ -376,8 +377,8 @@ class TestTaskFileEndpoints:
         # Create task and output directory
         import main
 
-        original_root = main.SERVER_OUTPUT_ROOT
-        main.SERVER_OUTPUT_ROOT = temp_dir / "downloads"
+        original_root = utils.SERVER_OUTPUT_ROOT
+        utils.SERVER_OUTPUT_ROOT = temp_dir / "downloads"
 
         try:
             task_id = main.state.add_task(
@@ -408,7 +409,7 @@ class TestTaskFileEndpoints:
             assert "video.mp4" in file_names
             assert "info.json" in file_names
         finally:
-            main.SERVER_OUTPUT_ROOT = original_root
+            utils.SERVER_OUTPUT_ROOT = original_root
 
     @pytest.mark.asyncio
     async def test_list_task_files_not_completed(self, client_with_mock_state: AsyncClient) -> None:
@@ -431,8 +432,8 @@ class TestTaskFileEndpoints:
         """Test downloading a specific task file."""
         import main
 
-        original_root = main.SERVER_OUTPUT_ROOT
-        main.SERVER_OUTPUT_ROOT = temp_dir / "downloads"
+        original_root = utils.SERVER_OUTPUT_ROOT
+        utils.SERVER_OUTPUT_ROOT = temp_dir / "downloads"
 
         try:
             task_id = main.state.add_task(
@@ -457,7 +458,7 @@ class TestTaskFileEndpoints:
             assert response.status_code == 200
             assert response.content == b"video content"
         finally:
-            main.SERVER_OUTPUT_ROOT = original_root
+            utils.SERVER_OUTPUT_ROOT = original_root
 
     @pytest.mark.asyncio
     async def test_download_task_zip(
@@ -469,8 +470,8 @@ class TestTaskFileEndpoints:
 
         import main
 
-        original_root = main.SERVER_OUTPUT_ROOT
-        main.SERVER_OUTPUT_ROOT = temp_dir / "downloads"
+        original_root = utils.SERVER_OUTPUT_ROOT
+        utils.SERVER_OUTPUT_ROOT = temp_dir / "downloads"
 
         try:
             task_id = main.state.add_task(
@@ -503,7 +504,7 @@ class TestTaskFileEndpoints:
                 assert "video.mp4" in zf.namelist()
                 assert "info.json" in zf.namelist()
         finally:
-            main.SERVER_OUTPUT_ROOT = original_root
+            utils.SERVER_OUTPUT_ROOT = original_root
 
 
 class TestSubtitlesV2Endpoints:

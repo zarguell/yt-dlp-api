@@ -2,6 +2,7 @@
 Shared fixtures and test utilities.
 """
 
+import logging
 import os
 import tempfile
 import uuid
@@ -23,7 +24,10 @@ os.environ.update(
 )
 
 import main
-from main import AuthConfig, CookieConfig, RetryConfig, State
+from main import AuthConfig, CookieConfig, RetryConfig
+from state import State
+
+logger = logging.getLogger("yt-dlp-api")
 
 
 @pytest.fixture
@@ -44,7 +48,7 @@ def temp_db(temp_dir: Path) -> Generator[str]:
 @pytest.fixture
 def test_state(temp_db: str) -> State:
     """Provide a State instance with a temporary database."""
-    return State(db_file=temp_db)
+    return State(db_file=temp_db, logger=logger)
 
 
 @pytest.fixture
@@ -52,7 +56,7 @@ def clean_state() -> Generator[State]:
     """Provide a clean State instance for each test."""
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = Path(tmpdir) / "test.db"
-        state = State(db_file=str(db_path))
+        state = State(db_file=str(db_path), logger=logger)
         yield state
 
 
@@ -119,7 +123,7 @@ def reset_state() -> Generator[None]:
     # Create new temporary state
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = Path(tmpdir) / "test.db"
-        main.state = State(db_file=str(db_path))
+        main.state = State(db_file=str(db_path), logger=logger)
         yield
 
         # Restore original state
@@ -129,17 +133,19 @@ def reset_state() -> Generator[None]:
 @pytest.fixture
 def mock_output_root(temp_dir: Path) -> Generator[Path]:
     """Provide and set a temporary SERVER_OUTPUT_ROOT."""
-    original_root = main.SERVER_OUTPUT_ROOT
+    import utils
+
+    original_root = utils.SERVER_OUTPUT_ROOT
     test_root = temp_dir / "downloads"
     test_root.mkdir(parents=True, exist_ok=True)
 
     # Monkey-patch the SERVER_OUTPUT_ROOT
-    main.SERVER_OUTPUT_ROOT = test_root
+    utils.SERVER_OUTPUT_ROOT = test_root
 
     yield test_root
 
     # Restore original
-    main.SERVER_OUTPUT_ROOT = original_root
+    utils.SERVER_OUTPUT_ROOT = original_root
 
 
 @pytest.fixture

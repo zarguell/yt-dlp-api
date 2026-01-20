@@ -6,10 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from main import (
-    _env_float,
-    _env_int,
-    _env_truthy,
+from config import _env_float, _env_int, _env_truthy
+from utils import (
     _is_safe_subdir_name,
     ensure_dir,
     normalize_string,
@@ -153,10 +151,10 @@ class TestResolveTaskBaseDir:
     @staticmethod
     def test_empty_path_uses_default(tmp_path) -> None:
         """Test empty path resolves to 'default' subdir."""
-        import main
+        import utils
 
-        original_root = main.SERVER_OUTPUT_ROOT
-        main.SERVER_OUTPUT_ROOT = tmp_path
+        original_root = utils.SERVER_OUTPUT_ROOT
+        utils.SERVER_OUTPUT_ROOT = tmp_path
 
         try:
             result = resolve_task_base_dir("")
@@ -164,30 +162,31 @@ class TestResolveTaskBaseDir:
             assert result == expected
             assert result.exists()
         finally:
-            main.SERVER_OUTPUT_ROOT = original_root
+            utils.SERVER_OUTPUT_ROOT = original_root
 
     @staticmethod
     def test_dot_slash_uses_default(tmp_path) -> None:
         """Test './' path resolves to 'default' subdir."""
-        import main
+        import utils
 
-        original_root = main.SERVER_OUTPUT_ROOT
-        main.SERVER_OUTPUT_ROOT = tmp_path
+        original_root = utils.SERVER_OUTPUT_ROOT
+        utils.SERVER_OUTPUT_ROOT = tmp_path
 
         try:
             result = resolve_task_base_dir("./")
             expected = tmp_path / "default"
             assert result == expected
+            assert result.exists()
         finally:
-            main.SERVER_OUTPUT_ROOT = original_root
+            utils.SERVER_OUTPUT_ROOT = original_root
 
     @staticmethod
     def test_safe_name_creates_subdir(tmp_path) -> None:
         """Test safe name creates appropriate subdirectory."""
-        import main
+        import utils
 
-        original_root = main.SERVER_OUTPUT_ROOT
-        main.SERVER_OUTPUT_ROOT = tmp_path
+        original_root = utils.SERVER_OUTPUT_ROOT
+        utils.SERVER_OUTPUT_ROOT = tmp_path
 
         try:
             result = resolve_task_base_dir("my-downloads")
@@ -195,22 +194,21 @@ class TestResolveTaskBaseDir:
             assert result == expected
             assert result.exists()
         finally:
-            main.SERVER_OUTPUT_ROOT = original_root
+            utils.SERVER_OUTPUT_ROOT = original_root
 
     @staticmethod
     def test_unsafe_name_raises_http_exception(tmp_path) -> None:
         """Test unsafe names raise HTTP 400."""
-        import main
+        import utils
 
-        original_root = main.SERVER_OUTPUT_ROOT
-        main.SERVER_OUTPUT_ROOT = tmp_path
+        original_root = utils.SERVER_OUTPUT_ROOT
+        utils.SERVER_OUTPUT_ROOT = tmp_path
 
         try:
             with pytest.raises(Exception) as exc_info:  # HTTPException
-                assert exc_info.value.status_code == 400
                 resolve_task_base_dir("../escape")
         finally:
-            main.SERVER_OUTPUT_ROOT = original_root
+            utils.SERVER_OUTPUT_ROOT = original_root
 
 
 class TestResolveCookieFile:
@@ -219,15 +217,11 @@ class TestResolveCookieFile:
     @staticmethod
     def test_no_cookie_file_returns_none() -> None:
         """Test when no cookie file is configured."""
-        import main
+        # Note: resolve_cookie_file doesn't use cookie_config anymore
+        # It reads from config.CookieConfig directly
+        from config import CookieConfig
 
-        original_config = main.cookie_config
-        main.cookie_config = main.CookieConfig(cookies_file=None)
-
-        try:
-            assert resolve_cookie_file(None) is None
-        finally:
-            main.cookie_config = original_config
+        assert resolve_cookie_file(None) is None
 
     @staticmethod
     def test_nonexistent_file_returns_none(temp_dir) -> None:
