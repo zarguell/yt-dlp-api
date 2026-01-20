@@ -6,15 +6,14 @@ import random
 import sys
 import time
 import uuid
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Any, TypeVar, cast
+from typing import Any, TypeVar
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import uvicorn
-import yt_dlp
 from fastapi import Depends, FastAPI, File, HTTPException, Query, Security, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import APIKeyHeader
@@ -31,10 +30,7 @@ from config import (
 from models import (
     AudioRequest,
     DownloadRequest,
-    EnglishMode,
     JobType,
-    SubtitleFormat,
-    SubtitlePreference,
     SubtitlesRequest,
     SubtitlesV2Request,
     Task,
@@ -43,7 +39,6 @@ from service import YtDlpService
 from state import State
 from utils import (
     COOKIES_DIR,
-    ensure_dir,
     normalize_string,
     resolve_cookie_file,
     resolve_task_base_dir,
