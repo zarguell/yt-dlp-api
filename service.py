@@ -7,8 +7,9 @@ for video, audio, and subtitle downloads.
 
 import logging
 import time
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Sequence, cast
+from typing import Any, cast
 
 import yt_dlp
 
@@ -339,23 +340,15 @@ class YtDlpService:
             # Prefer manual over auto based on preference
             if prefer == SubtitlePreference.manual_only:
                 if manual_matches:
-                    selected = manual_matches[0]
-                    logger.info("Selected manual subtitle regex=%s match=%s", pattern, selected)
-                    return selected
+                    return cast("str", manual_matches[0])
             elif prefer == SubtitlePreference.auto_only:
                 if auto_matches:
-                    selected = auto_matches[0]
-                    logger.info("Selected automatic caption regex=%s match=%s", pattern, selected)
-                    return selected
+                    return cast("str", auto_matches[0])
             else:  # manual_then_auto
                 if manual_matches:
-                    selected = manual_matches[0]
-                    logger.info("Selected manual subtitle regex=%s match=%s", pattern, selected)
-                    return selected
+                    return cast("str", manual_matches[0])
                 if auto_matches:
-                    selected = auto_matches[0]
-                    logger.info("Selected automatic caption regex=%s match=%s", pattern, selected)
-                    return selected
+                    return cast("str", auto_matches[0])
 
         logger.warning("No matching subtitle language found for patterns=%s", english_rank)
         return None
@@ -380,13 +373,13 @@ class YtDlpService:
         # Match English variants (en, en-US, en-GB, etc.)
         english_regex = re.compile(r"^en(-[A-Z]{2})?$")
 
-        langs = set()
+        langs: set[str] = set()
         if prefer != SubtitlePreference.auto_only:
             langs.update(lang for lang in manual_subs.keys() if english_regex.match(lang))
         if prefer != SubtitlePreference.manual_only:
             langs.update(lang for lang in auto_subs.keys() if english_regex.match(lang))
 
-        return sorted(langs)
+        return cast("list[str]", sorted(langs))
 
     @staticmethod
     def download_subtitles_v2(
@@ -419,7 +412,7 @@ class YtDlpService:
         """
         # Get video info first
         logger.info("Extracting video info for subtitle selection url=%s", url)
-        info_opts = {
+        info_opts: dict[str, Any] = {
             "quiet": quiet,
             "no_warnings": quiet,
             "skip_download": True,
