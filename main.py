@@ -30,7 +30,10 @@ from config import (
 from models import (
     AudioRequest,
     DownloadRequest,
+    EnglishMode,
     JobType,
+    SubtitleFormat,
+    SubtitlePreference,
     SubtitlesRequest,
     SubtitlesV2Request,
     Task,
