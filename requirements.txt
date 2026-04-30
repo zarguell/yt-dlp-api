@@ -1,5 +1,5 @@
 annotated-types==0.7.0
-anyio==4.9.0
+anyio==4.13.0
 click==8.3.1
 fastapi==0.127.0
 h11==0.16.0
@@ -12,5 +12,5 @@ starlette==0.50.0
 typing-inspection==0.4.2
 typing_extensions==4.15.0
 uvicorn==0.46.0
-yt-dlp==2026.2.21
+yt-dlp==2026.3.17
 zipp>=3.19.1 # not directly required, pinned by Snyk to avoid a vulnerability
